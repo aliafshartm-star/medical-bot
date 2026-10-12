@@ -1,5 +1,5 @@
 """
-ساخت فایل PDF از مقاله ترجمه‌شده
+ساخت فایل PDF از مقاله فارسی
 """
 import os
 import logging
@@ -23,7 +23,7 @@ os.makedirs(PDF_DIR, exist_ok=True)
 
 
 def _register_persian_font():
-    """ثبت فونت فارسی برای PDF"""
+    """ثبت فونت فارسی"""
     font_paths = [
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
@@ -47,7 +47,7 @@ def _register_persian_font():
             pdfmetrics.registerFont(TTFont("PersianFont", regular_font))
             log.info(f"✅ فونت عادی: {regular_font}")
         except Exception as e:
-            log.warning(f"⚠️ خطا در فونت عادی: {e}")
+            log.warning(f"⚠️ خطا در فونت: {e}")
 
     if bold_font:
         try:
@@ -60,7 +60,7 @@ def _register_persian_font():
 
 
 def _fix_persian(text):
-    """اصلاح متن فارسی برای PDF (راست‌چین + اتصال حروف)"""
+    """اصلاح متن فارسی برای PDF"""
     if not text:
         return ""
     try:
@@ -79,19 +79,22 @@ def _safe_filename(text, max_len=40):
 
 def generate_pdf(article):
     """
-    ساخت PDF از مقاله
-    برمی‌گردونه: مسیر فایل PDF یا None
+    ساخت PDF از مقاله فارسی
     """
     try:
-        title_fa = article.get("title_fa") or article.get("title", "")
-        summary_fa = article.get("summary_fa") or article.get("summary", "")
-        full_text_fa = article.get("full_text_fa", "") or article.get("full_text", "")
+        title = article.get("title", "").strip()
+        summary = article.get("summary", "").strip()
+        full_text = article.get("full_text", "").strip()
         source = article.get("source", "")
         link = article.get("link", "")
         published = article.get("published", "")
 
+        if not title:
+            log.warning("⚠️ عنوان خالی، PDF ساخته نشد")
+            return None
+
         # اسم فایل
-        filename = f"{_safe_filename(title_fa)}.pdf"
+        filename = f"{_safe_filename(title)}.pdf"
         filepath = os.path.join(PDF_DIR, filename)
 
         # ثبت فونت
@@ -105,7 +108,7 @@ def generate_pdf(article):
             leftMargin=20 * mm,
             topMargin=20 * mm,
             bottomMargin=20 * mm,
-            title=title_fa[:80],
+            title=title[:80],
         )
 
         # استایل‌ها
@@ -115,9 +118,9 @@ def generate_pdf(article):
             "PersianTitle",
             parent=styles["Title"],
             fontName=bold,
-            fontSize=18,
+            fontSize=17,
             leading=26,
-            alignment=2,  # راست‌چین
+            alignment=2,
             textColor=HexColor("#1a5490"),
             spaceAfter=15,
         )
@@ -161,7 +164,7 @@ def generate_pdf(article):
             fontName=regular,
             fontSize=9,
             leading=14,
-            alignment=1,  # وسط
+            alignment=1,
             textColor=HexColor("#999999"),
             spaceBefore=30,
         )
@@ -170,34 +173,32 @@ def generate_pdf(article):
         story = []
 
         # عنوان
-        story.append(Paragraph(_fix_persian(title_fa), style_title))
+        story.append(Paragraph(_fix_persian(title), style_title))
 
         # متادیتا
         meta_lines = []
         if source:
-            meta_lines.append(f"📚 منبع: {source}")
+            meta_lines.append(f"منبع: {source}")
         if published:
-            meta_lines.append(f"🗓 تاریخ: {published}")
+            meta_lines.append(f"تاریخ: {published}")
         meta_text = " | ".join(meta_lines)
         if meta_text:
             story.append(Paragraph(_fix_persian(meta_text), style_meta))
 
-        # بخش خلاصه
-        story.append(Paragraph(_fix_persian("📖 خلاصه"), style_heading))
+        # خلاصه
+        if summary:
+            story.append(Paragraph(_fix_persian("خلاصه"), style_heading))
+            for para in summary.split("\n"):
+                para = para.strip()
+                if para:
+                    story.append(Paragraph(_fix_persian(para), style_body))
 
-        summary_text = summary_fa or "خلاصه‌ای در دسترس نیست."
-        # تقسیم به پاراگراف
-        for para in summary_text.split("\n"):
-            para = para.strip()
-            if para:
-                story.append(Paragraph(_fix_persian(para), style_body))
-
-        # بخش متن کامل (اگه داشتیم)
-        if full_text_fa and len(full_text_fa) > len(summary_fa) + 100:
+        # متن کامل
+        if full_text and len(full_text) > len(summary) + 100:
             story.append(PageBreak())
-            story.append(Paragraph(_fix_persian("📄 متن کامل مقاله"), style_heading))
+            story.append(Paragraph(_fix_persian("متن کامل"), style_heading))
 
-            for para in full_text_fa.split("\n"):
+            for para in full_text.split("\n"):
                 para = para.strip()
                 if para and len(para) > 5:
                     story.append(Paragraph(_fix_persian(para), style_body))
@@ -205,13 +206,13 @@ def generate_pdf(article):
         # فوتر
         story.append(Spacer(1, 20))
         footer_text = (
-            f"🔗 لینک اصلی مقاله:\n{link}\n\n"
-            f"📢 کانال تلگرام: @ModernMedFA\n\n"
-            "⚠️ این مطلب صرفاً جنبه اطلاع‌رسانی علمی دارد و جایگزین نظر پزشک متخصص نیست."
+            f"لینک اصلی:\n{link}\n\n"
+            f"کانال تلگرام: @ModernMedFA\n\n"
+            "این مطلب صرفاً جنبه اطلاع‌رسانی دارد و جایگزین نظر پزشک متخصص نیست."
         )
         story.append(Paragraph(_fix_persian(footer_text).replace("\n", "<br/>"), style_footer))
 
-        # ساخت PDF
+        # ساخت
         doc.build(story)
         log.info(f"✅ PDF ساخته شد: {filepath}")
         return filepath
@@ -222,15 +223,13 @@ def generate_pdf(article):
 
 
 if __name__ == "__main__":
-    test_article = {
-        "title": "Test Article",
-        "title_fa": "مقاله تست",
-        "summary": "Test summary",
-        "summary_fa": "این یک خلاصه تست است برای بررسی عملکرد ساخت PDF فارسی.",
-        "full_text_fa": "این متن کامل مقاله تست است.\n\nاین پاراگراف دوم است.\n\nو این هم پاراگراف سوم.",
-        "source": "NEJM",
+    test = {
+        "title": "تست ساخت PDF فارسی",
+        "summary": "این یک خلاصه تست است.\n\nپاراگراف دوم خلاصه.",
+        "full_text": "متن کامل مقاله اینجا قرار می‌گیرد.\n\nپاراگراف دوم متن کامل.\n\nپاراگراف سوم.",
+        "source": "مهر سلامت",
         "link": "https://example.com",
-        "published": "2026-10-12",
+        "published": "1404/07/20",
     }
-    path = generate_pdf(test_article)
+    path = generate_pdf(test)
     print(f"PDF: {path}")
