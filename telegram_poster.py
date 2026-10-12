@@ -1,18 +1,14 @@
 import os
 import logging
+import requests
 from telegram import Bot, InputFile
 from telegram.constants import ParseMode
-
-from pdf_generator import generate_pdf
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
 log = logging.getLogger(__name__)
 
 CHANNEL_ID = os.environ.get("TELEGRAM_CHANNEL_ID", "@ModernMedFA")
 CHANNEL_HANDLE = "@ModernMedFA"
-
-# اگه متن مقاله از این تعداد کاراکتر بیشتر بود، PDF ساخته میشه
-PDF_THRESHOLD = 800
 
 
 def _escape(text):
@@ -38,16 +34,49 @@ def _hashtags(source):
         "بهداشت نیوز": "#سلامت #بهداشت",
         "طبنا": "#سلامت #پزشکی",
         "شفاآنلاین": "#سلامت #پزشکی",
+        "سیناپرس سلامت": "#سلامت #علمی #سیناپرس",
         "مهر سلامت": "#سلامت #اخبار_پزشکی",
         "ایسنا سلامت": "#سلامت #اخبار_پزشکی",
-        "ایرنا سلامت": "#سلامت #اخبار_پزشکی",
-        "وزارت بهداشت": "#وزارت_بهداشت #سلامت_عمومی",
     }
     return mapping.get(source, "#پزشکی #سلامت")
 
 
-def build_caption(article, include_pdf_note=False):
-    """ساخت کپشن"""
+def _download_image(url):
+    """دانلود عکس خبر"""
+    if not url:
+        return None
+    try:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (compatible; MedicalBot/1.0)"
+        }
+        response = requests.get(url, headers=headers, timeout=20)
+        response.raise_for_status()
+
+        ext = ".jpg"
+        content_type = response.headers.get("Content-Type", "").lower()
+        if "png" in content_type:
+            ext = ".png"
+        elif "webp" in content_type:
+            ext = ".webp"
+
+        path = "temp_image" + ext
+        with open(path, "wb") as f:
+            f.write(response.content)
+
+        size_mb = os.path.getsize(path) / (1024 * 1024)
+        if size_mb > 5:
+            os.remove(path)
+            log.warning("   ⚠️ عکس بزرگ‌تر از ۵MB")
+            return None
+
+        return path
+    except Exception as e:
+        log.warning("   ⚠️ خطا در دانلود عکس: " + str(e)[:60])
+        return None
+
+
+def build_caption(article):
+    """ساخت کپشن خبر"""
     source = article.get("source", "")
     title = article.get("title", "")
     summary = article.get("summary", "")
@@ -72,10 +101,6 @@ def build_caption(article, include_pdf_note=False):
     parts.append("")
     parts.append("⚠️ صرفاً جهت اطلاع‌رسانی — جایگزین نظر پزشک متخصص نیست.")
 
-    if include_pdf_note:
-        parts.append("")
-        parts.append("📄 <b>متن کامل در PDF ضمیمه</b>")
-
     return "\n".join(parts)
 
 
@@ -83,50 +108,41 @@ async def send_article(article):
     bot = Bot(token=os.environ["TELEGRAM_BOT_TOKEN"])
 
     try:
-        full_text = article.get("full_text", "").strip()
-        text_len = len(full_text)
+        caption = build_caption(article)
+        image_url = article.get("image_url")
 
-        # تصمیم: PDF بسازیم یا نه
-        need_pdf = text_len >= PDF_THRESHOLD
+        # تلاش برای ارسال با عکس
+        if image_url:
+            log.info("   🖼 دانلود عکس...")
+            img_path = _download_image(image_url)
 
-        if need_pdf:
-            # ساخت PDF + ارسال با کپشن
-            log.info("   📄 ساخت PDF (متن " + str(text_len) + " کاراکتر)")
-            pdf_path = generate_pdf(article)
-            caption = build_caption(article, include_pdf_note=True)
+            if img_path and os.path.exists(img_path):
+                try:
+                    with open(img_path, "rb") as f:
+                        await bot.send_photo(
+                            chat_id=CHANNEL_ID,
+                            photo=InputFile(f),
+                            caption=caption[:1024],
+                            parse_mode=ParseMode.HTML,
+                        )
+                    log.info("   ✅ عکس + کپشن ارسال شد")
+                    os.remove(img_path)
+                    return True
+                except Exception as e:
+                    log.warning("   ⚠️ خطا در ارسال عکس: " + str(e)[:60])
+                    if os.path.exists(img_path):
+                        os.remove(img_path)
 
-            if pdf_path and os.path.exists(pdf_path):
-                with open(pdf_path, "rb") as f:
-                    await bot.send_document(
-                        chat_id=CHANNEL_ID,
-                        document=InputFile(f, filename=os.path.basename(pdf_path)),
-                        caption=caption[:1024],
-                        parse_mode=ParseMode.HTML,
-                    )
-                log.info("   ✅ PDF + کپشن ارسال شد")
-                return True
-            else:
-                log.warning("   ⚠️ PDF ساخته نشد، فقط متن")
-                # fallback: پیام متنی
-                await bot.send_message(
-                    chat_id=CHANNEL_ID,
-                    text=caption[:4096],
-                    parse_mode=ParseMode.HTML,
-                    disable_web_page_preview=False,
-                )
-                return True
-        else:
-            # فقط پیام متنی (خبر کوتاه)
-            log.info("   📰 خبر کوتاه (" + str(text_len) + " کاراکتر) — فقط متن")
-            caption = build_caption(article, include_pdf_note=False)
-            await bot.send_message(
-                chat_id=CHANNEL_ID,
-                text=caption[:4096],
-                parse_mode=ParseMode.HTML,
-                disable_web_page_preview=False,
-            )
-            log.info("   ✅ پیام متنی ارسال شد")
-            return True
+        # اگه عکس نداشت یا خطا داد → فقط متن
+        log.info("   📰 فقط متن (بدون عکس)")
+        await bot.send_message(
+            chat_id=CHANNEL_ID,
+            text=caption[:4096],
+            parse_mode=ParseMode.HTML,
+            disable_web_page_preview=False,
+        )
+        log.info("   ✅ پیام متنی ارسال شد")
+        return True
 
     except Exception as e:
         log.error("❌ خطا در ارسال: " + str(e))
@@ -134,5 +150,5 @@ async def send_article(article):
 
 
 async def post_article(article):
-    log.info("📝 ارسال مقاله: " + article.get("title", "")[:60] + "...")
+    log.info("📝 ارسال خبر: " + article.get("title", "")[:60] + "...")
     return await send_article(article)
