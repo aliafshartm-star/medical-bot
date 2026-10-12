@@ -59,13 +59,9 @@ def prepare_article(article):
     """ترجمه عنوان، خلاصه و متن کامل"""
     log.info(f"🌐 ترجمه: {article.get('title', '')[:50]}...")
 
-    # ترجمه عنوان
     article["title_fa"] = translate_title(article.get("title", ""))
-
-    # ترجمه خلاصه
     article["summary_fa"] = translate_summary(article.get("summary", ""))
 
-    # ترجمه متن کامل
     full_text = article.get("full_text", "").strip()
     summary = article.get("summary", "").strip()
     if full_text and len(full_text) > len(summary) + 50:
@@ -74,7 +70,6 @@ def prepare_article(article):
     else:
         article["full_text_fa"] = ""
 
-    # ذخیره کش
     try:
         _save_cache()
     except Exception:
@@ -116,10 +111,7 @@ async def send_article(article):
     bot = Bot(token=os.environ["TELEGRAM_BOT_TOKEN"])
 
     try:
-        # ساخت PDF
         pdf_path = generate_pdf(article)
-
-        # ساخت کپشن
         caption = build_caption(article)
 
         if pdf_path and os.path.exists(pdf_path):
@@ -133,10 +125,9 @@ async def send_article(article):
             log.info("✅ PDF + کپشن ارسال شد (یک پست)")
             return True
         else:
-            # اگه PDF نشد، متن کپشن رو بفرست
             log.warning("⚠️ PDF ساخته نشد، فقط متن")
             await bot.send_message(
- پی                chat_id=CHANNEL_ID,
+                chat_id=CHANNEL_ID,
                 text=caption[:4096],
                 parse_mode=ParseMode.HTML,
                 disable_web_page_preview=False,
