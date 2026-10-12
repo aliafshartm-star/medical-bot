@@ -1,23 +1,46 @@
 """
-دریافت مقالات از منابع معتبر Open Access
+منابع محتوای پزشکی معتبر (نسخه اصلاح‌شده با RSSهای تست‌شده)
+- تخصصی: NEJM, Lancet, JAMA, BMJ, Nature, CDC, PubMed
+- عمومی: WHO, Mayo Clinic, MedlinePlus, NIH
 """
 import logging
 import time
-import requests
-from bs4 import BeautifulSoup
 from datetime import datetime, timedelta
 import feedparser
+import requests
+from bs4 import BeautifulSoup
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
 log = logging.getLogger(__name__)
 
-# منابع معتبر Open Access
-OPEN_ACCESS_FEEDS = {
-    "PMC Open Access": "https://www.ncbi.nlm.nih.gov/pmc/tools/rss/",
-    "DOAJ": "https://doaj.org/rss/genre,article",
-    "medRxiv": "https://connect.medrxiv.org/medrxiv_xml.php",
-    "Europe PMC": "https://europepmc.org/rss",
+
+# ═══════════════════════════════════════════════════════
+# منابع تخصصی (RSSهای تست‌شده و فعال)
+# ═══════════════════════════════════════════════════════
+SPECIALIZED_FEEDS = {
+    "The Lancet": "https://www.thelancet.com/rssfeed/lancet_current.xml",
+    "BMJ": "https://www.bmj.com/rss/recent.xml",
+    "Nature Medicine": "https://www.nature.com/nm.rss",
+    "Nature": "https://www.nature.com/nature.rss",
+    "CDC EID": "https://wwwnc.cdc.gov/eid/rss/current.xml",
+    "PubMed Cancer": "https://pubmed.ncbi.nlm.nih.gov/rss/search/?term=cancer+therapy&format=rss",
+    "PubMed HIV": "https://pubmed.ncbi.nlm.nih.gov/rss/search/?term=HIV+treatment&format=rss",
+    "PubMed Infectious": "https://pubmed.ncbi.nlm.nih.gov/rss/search/?term=infectious+diseases&format=rss",
+    "bioRxiv": "https://connect.biorxiv.org/biorxiv_xml.php?subject=all",
+    "medRxiv": "https://connect.medrxiv.org/medrxiv_xml.php?subject=all",
 }
+
+
+# ═══════════════════════════════════════════════════════
+# منابع عمومی (RSSهای تست‌شده و فعال)
+# ═══════════════════════════════════════════════════════
+GENERAL_FEEDS = {
+    "WHO": "https://www.who.int/rss-feeds/news-english.xml",
+    "Mayo Clinic": "https://newsnetwork.mayoclinic.org/feed/",
+    "MedlinePlus": "https://medlineplus.gov/feeds/news_en.xml",
+    "NIH News": "https://www.nih.gov/news-events/news-releases/feed.xml",
+}
+
 
 def _clean_html(raw):
     """حذف تگ‌های HTML از متن"""
@@ -25,6 +48,7 @@ def _clean_html(raw):
         return ""
     soup = BeautifulSoup(raw, "html.parser")
     return soup.get_text(separator=" ", strip=True)
+
 
 def _is_recent(entry, hours=72):
     """چک کنه مقاله توی بازه زمانی مشخص منتشر شده"""
@@ -36,13 +60,14 @@ def _is_recent(entry, hours=72):
         pass
     return True
 
+
 def _fetch_feed(source_name, url, max_items=3):
     """خوندن یک RSS Feed"""
     articles = []
     try:
         feed = feedparser.parse(url)
         if not feed.entries:
-            log.warning(f"⚠️ {source_name}: خالی")
+            log.warning(f"⚠️ {source_name}: خالی یا RSS نامعتبر")
             return articles
 
         for entry in feed.entries[:max_items]:
@@ -50,12 +75,17 @@ def _fetch_feed(source_name, url, max_items=3):
                 continue
 
             title = _clean_html(entry.get("title", "")).strip()
-            summary = _clean_html(entry.get("summary", entry.get("description", ""))).strip()
+            summary = _clean_html(
+                entry.get("summary", entry.get("description", ""))
+            ).strip()
             link = entry.get("link", "").strip()
             published = entry.get("published", "").strip()
-            doi = entry.get("dc_identifier", "").strip() # برای دریافت DOI
 
             if not title or not link:
+                continue
+
+            # رد کردن مقالات خیلی کوتاه
+            if len(title) < 15:
                 continue
 
             articles.append({
@@ -64,8 +94,7 @@ def _fetch_feed(source_name, url, max_items=3):
                 "summary": summary[:2000],
                 "link": link,
                 "published": published,
-                "doi": doi,
-                "category": "specialized",
+                "category": "specialized" if source_name in SPECIALIZED_FEEDS else "general",
             })
 
         log.info(f"✅ {source_name}: {len(articles)} مقاله")
@@ -74,42 +103,62 @@ def _fetch_feed(source_name, url, max_items=3):
 
     return articles
 
+
 def fetch_all_articles():
     """دریافت مقالات از همه منابع"""
-    log.info("📚 شروع دریافت مقالات از منابع Open Access...")
+    log.info("📚 شروع دریافت مقالات از منابع پزشکی...")
     all_articles = []
 
-    for name, url in OPEN_ACCESS_FEEDS.items():
-        articles = _fetch_feed(name, url, max_items=5)
+    log.info("\n🔬 منابع تخصصی:")
+    for name, url in SPECIALIZED_FEEDS.items():
+        articles = _fetch_feed(name, url, max_items=3)
         all_articles.extend(articles)
-        time.sleep(0.5)
+        time.sleep(0.3)
+
+    log.info("\n🩺 منابع عمومی:")
+    for name, url in GENERAL_FEEDS.items():
+        articles = _fetch_feed(name, url, max_items=3)
+        all_articles.extend(articles)
+        time.sleep(0.3)
 
     log.info(f"\n🎯 مجموع: {len(all_articles)} مقاله")
     return all_articles
 
+
 def fetch_article_full_text(url, max_chars=5000):
-    """دریافت متن کامل مقاله از لینک"""
+    """دریافت متن کامل مقاله از لینک (اختیاری)"""
     try:
         headers = {
             "User-Agent": "Mozilla/5.0 (compatible; MedicalBot/1.0)"
         }
-        response = requests.get(url, headers=headers, timeout=20)
+        response = requests.get(url, headers=headers, timeout=15)
         response.raise_for_status()
 
         soup = BeautifulSoup(response.text, "lxml")
-        for tag in soup(["script", "style", "nav", "footer", "header"]):
+
+        for tag in soup(["script", "style", "nav", "footer", "header", "aside"]):
             tag.decompose()
 
-        article_body = soup.find("article") or soup.find("div", class_="article-body") or soup.find("main") or soup.body
+        article_body = (
+            soup.find("article") or
+            soup.find("div", class_="article-body") or
+            soup.find("div", class_="content") or
+            soup.find("main") or
+            soup.body
+        )
+
         if not article_body:
             return ""
 
         text = article_body.get_text(separator="\n", strip=True)
         lines = [line.strip() for line in text.split("\n") if line.strip()]
-        return "\n".join(lines)[:max_chars]
+        text = "\n".join(lines)
+
+        return text[:max_chars]
     except Exception as e:
         log.warning(f"⚠️ خطا در دریافت متن کامل: {str(e)[:80]}")
         return ""
+
 
 if __name__ == "__main__":
     articles = fetch_all_articles()
