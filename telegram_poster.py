@@ -1,7 +1,7 @@
 """
-ارسال پست‌های پزشکی به کانال تلگرام
-- ترجمه به فارسی
-- ساخت PDF کامل
+ارسال پست‌های پزشکی فارسی به کانال تلگرام
+- بدون ترجمه (محتوا از قبل فارسیه)
+- ساخت PDF فارسی
 - فقط یک پست (PDF + کپشن)
 """
 import os
@@ -9,7 +9,6 @@ import logging
 from telegram import Bot, InputFile
 from telegram.constants import ParseMode
 
-from translator import translate_title, translate_summary, translate_to_fa, _save_cache
 from pdf_generator import generate_pdf
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
@@ -37,81 +36,62 @@ def _truncate(text, max_len):
 
 
 def _hashtags(source):
+    """هشتگ بر اساس منبع"""
     mapping = {
-        "The Lancet": "#ژورنال_کلاب #Lancet #پزشکی_بالینی",
-        "BMJ": "#ژورنال_کلاب #BMJ #پزشکی_بالینی",
-        "Nature Medicine": "#تحقیقات #NatureMedicine",
-        "Nature": "#علمی #Nature",
-        "PubMed Cancer": "#انکولوژی #سرطان",
-        "PubMed HIV": "#HIV #ایدز",
-        "PubMed Infectious": "#عفونی #میکروبیولوژی",
-        "bioRxiv": "#پیش_چاپ #bioRxiv",
-        "medRxiv": "#پیش_چاپ #medRxiv",
-        "WHO": "#سلامت_عمومی #WHO",
-        "Mayo Clinic": "#سلامت_عمومی #MayoClinic",
-        "MedlinePlus": "#سلامت_عمومی",
-        "NIH News": "#سلامت_عمومی #NIH",
+        "مهر سلامت": "#سلامت #اخبار_پزشکی #مهر",
+        "ایسنا سلامت": "#سلامت #اخبار_پزشکی #ایسنا",
+        "ایرنا سلامت": "#سلامت #اخبار_پزشکی #ایرنا",
+        "فارس سلامت": "#سلامت #اخبار_پزشکی",
+        "تابناک سلامت": "#سلامت #اخبار_پزشکی",
+        "سلامت نیوز": "#سلامت #پزشکی #سلامت_نیوز",
+        "بهداشت نیوز": "#سلامت #بهداشت",
+        "وزارت بهداشت": "#وزارت_بهداشت #سلامت_عمومی",
     }
     return mapping.get(source, "#پزشکی #سلامت")
-
-
-def prepare_article(article):
-    """ترجمه عنوان، خلاصه و متن کامل"""
-    log.info(f"🌐 ترجمه: {article.get('title', '')[:50]}...")
-
-    article["title_fa"] = translate_title(article.get("title", ""))
-    article["summary_fa"] = translate_summary(article.get("summary", ""))
-
-    full_text = article.get("full_text", "").strip()
-    summary = article.get("summary", "").strip()
-    if full_text and len(full_text) > len(summary) + 50:
-        log.info("   🌐 ترجمه متن کامل...")
-        article["full_text_fa"] = translate_to_fa(full_text[:4000])
-    else:
-        article["full_text_fa"] = ""
-
-    try:
-        _save_cache()
-    except Exception:
-        pass
-
-    return article
 
 
 def build_caption(article):
     """ساخت کپشن کوتاه (زیر PDF)"""
     source = article.get("source", "")
-    title_fa = article.get("title_fa") or article.get("title", "")
-    summary_fa = article.get("summary_fa") or ""
+    title = article.get("title", "")
+    summary = article.get("summary", "")
     link = article.get("link", "").strip()
 
-    summary_short = _truncate(_escape(summary_fa), 500)
+    summary_short = _truncate(_escape(summary), 600)
 
     parts = [
-        f"🔬 <b>{_escape(title_fa)}</b>",
+        f"🩺 <b>{_escape(title)}</b>",
         "",
-        f"📖 {summary_short}",
-        "",
+    ]
+
+    if summary_short:
+        parts.append(f"📖 {summary_short}")
+        parts.append("")
+
+    parts.extend([
         f"📚 منبع: <b>{_escape(source)}</b>",
-        f"🔗 <a href=\"{link}\">لینک اصلی مقاله</a>",
+        f"🔗 <a href=\"{link}\">لینک خبر</a>",
         "",
         f"🏷 {_hashtags(source)}",
         f"📢 {CHANNEL_HANDLE}",
         "",
-        "⚠️ صرفاً جهت اطلاع‌رسانی علمی — جایگزین نظر پزشک متخصص نیست.",
+        "⚠️ صرفاً جهت اطلاع‌رسانی — جایگزین نظر پزشک ساخت متخصص نیست.",
         "",
-        "📄 <b>متن کامل ترجمه‌شده در PDF ضمیمه</b>",
-    ]
+        "📄 <b>متن کامل در PDF ضمیمه</b>",
+    ])
 
-    return "\n".join(parts)
+    return "\n PDF".join(parts)
 
 
 async def send_article(article):
-    """ارسال فقط یک پست: PDF + کپشن"""
-    bot = Bot(token=os.environ["TELEGRAM_BOT_TOKEN"])
+    """ارسال یک پست: PDF + کپشن"""
+   
+ bot = Bot(token=os.environ["TELEGRAM_BOT_TOKEN"])
 
     try:
-        pdf_path = generate_pdf(article)
+        #        pdf_path = generate_pdf(article)
+
+        # ساخت کپشن
         caption = build_caption(article)
 
         if pdf_path and os.path.exists(pdf_path):
@@ -122,7 +102,7 @@ async def send_article(article):
                     caption=caption[:1024],
                     parse_mode=ParseMode.HTML,
                 )
-            log.info("✅ PDF + کپشن ارسال شد (یک پست)")
+            log.info("✅ PDF + کپشن ارسال شد")
             return True
         else:
             log.warning("⚠️ PDF ساخته نشد، فقط متن")
@@ -140,6 +120,6 @@ async def send_article(article):
 
 
 async def post_article(article):
-    """تابع اصلی: ترجمه + ارسال"""
-    article = prepare_article(article)
+    """تابع اصلی: ارسال"""
+    log.info(f"📝 ارسال مقاله: {article.get('title', '')[:60]}...")
     return await send_article(article)
