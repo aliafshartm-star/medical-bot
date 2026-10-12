@@ -4,7 +4,6 @@ on:
   workflow_dispatch:
 
   schedule:
-    # هر ۶ ساعت یک بار (ساعت ۰، ۶، ۱۲، ۱۸ UTC)
     - cron: '0 */6 * * *'
 
 permissions:
@@ -41,6 +40,7 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID }}
+          LIBRETRANSLATE_URL: ${{ secrets.LIBRETRANSLATE_URL }}
         run: python main.py
 
       - name: Save memory files
@@ -48,7 +48,23 @@ jobs:
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git add seen_articles.json translation_cache.json
+
+          # اضافه کردن فایل‌هایی که وجود دارن
+          FILES_TO_ADD=""
+          if [ -f "seen_articles.json" ]; then
+            FILES_TO_ADD="$FILES_TO_ADD seen_articles.json"
+          fi
+          if [ -f "translation_cache.json" ]; then
+            FILES_TO_ADD="$FILES_TO_ADD translation_cache.json"
+          fi
+
+          if [ -z "$FILES_TO_ADD" ]; then
+            echo "📭 هیچ فایلی برای ذخیره وجود ندارد"
+            exit 0
+          fi
+
+          git add $FILES_TO_ADD
+
           if git diff --staged --quiet; then
             echo "📭 تغییری نیست"
           else
