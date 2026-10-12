@@ -98,8 +98,6 @@ def build_caption(article):
     parts.append("")
     parts.append("🏷 " + _hashtags(source))
     parts.append("📢 " + CHANNEL_HANDLE)
-    parts.append("")
-    parts.append("⚠️ صرفاً جهت اطلاع‌رسانی — جایگزین نظر پزشک متخصص نیست.")
 
     return "\n".join(parts)
 
