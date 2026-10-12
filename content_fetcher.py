@@ -1,8 +1,3 @@
-"""
-منابع محتوای پزشکی معتبر (نسخه اصلاح‌شده با RSSهای تست‌شده)
-- تخصصی: NEJM, Lancet, JAMA, BMJ, Nature, CDC, PubMed
-- عمومی: WHO, Mayo Clinic, MedlinePlus, NIH
-"""
 import logging
 import time
 from datetime import datetime, timedelta
@@ -14,36 +9,17 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
 log = logging.getLogger(__name__)
 
 
-# ═══════════════════════════════════════════════════════
-# منابع تخصصی (RSSهای تست‌شده و فعال)
-# ═══════════════════════════════════════════════════════
-SPECIALIZED_FEEDS = {
-    "The Lancet": "https://www.thelancet.com/rssfeed/lancet_current.xml",
-    "BMJ": "https://www.bmj.com/rss/recent.xml",
-    "Nature Medicine": "https://www.nature.com/nm.rss",
-    "Nature": "https://www.nature.com/nature.rss",
-    "CDC EID": "https://wwwnc.cdc.gov/eid/rss/current.xml",
-    "PubMed Cancer": "https://pubmed.ncbi.nlm.nih.gov/rss/search/?term=cancer+therapy&format=rss",
-    "PubMed HIV": "https://pubmed.ncbi.nlm.nih.gov/rss/search/?term=HIV+treatment&format=rss",
-    "PubMed Infectious": "https://pubmed.ncbi.nlm.nih.gov/rss/search/?term=infectious+diseases&format=rss",
-    "bioRxiv": "https://connect.biorxiv.org/biorxiv_xml.php?subject=all",
-    "medRxiv": "https://connect.medrxiv.org/medrxiv_xml.php?subject=all",
-}
-
-
-# ═══════════════════════════════════════════════════════
-# منابع عمومی (RSSهای تست‌شده و فعال)
-# ═══════════════════════════════════════════════════════
-GENERAL_FEEDS = {
-    "WHO": "https://www.who.int/rss-feeds/news-english.xml",
-    "Mayo Clinic": "https://newsnetwork.mayoclinic.org/feed/",
-    "MedlinePlus": "https://medlineplus.gov/feeds/news_en.xml",
-    "NIH News": "https://www.nih.gov/news-events/news-releases/feed.xml",
+PERSIAN_FEEDS = {
+    "مهر سلامت": "https://www.mehrnews.com/rss",
+    "ایسنا": "https://www.isna.ir/rss",
+    "ایرنا": "https://www.irna.ir/rss",
+    "سلامت نیوز": "https://www.salamatnews.com/rss",
+    "بهداشت نیوز": "https://behdashtnews.ir/feed/",
+    "وزارت بهداشت": "https://behdasht.gov.ir/rss",
 }
 
 
 def _clean_html(raw):
-    """حذف تگ‌های HTML از متن"""
     if not raw:
         return ""
     soup = BeautifulSoup(raw, "html.parser")
@@ -51,7 +27,6 @@ def _clean_html(raw):
 
 
 def _is_recent(entry, hours=72):
-    """چک کنه مقاله توی بازه زمانی مشخص منتشر شده"""
     try:
         if hasattr(entry, "published_parsed") and entry.published_parsed:
             published = datetime(*entry.published_parsed[:6])
@@ -62,12 +37,11 @@ def _is_recent(entry, hours=72):
 
 
 def _fetch_feed(source_name, url, max_items=3):
-    """خوندن یک RSS Feed"""
     articles = []
     try:
         feed = feedparser.parse(url)
         if not feed.entries:
-            log.warning(f"⚠️ {source_name}: خالی یا RSS نامعتبر")
+            log.warning("⚠️ " + source_name + ": خالی")
             return articles
 
         for entry in feed.entries[:max_items]:
@@ -84,8 +58,7 @@ def _fetch_feed(source_name, url, max_items=3):
             if not title or not link:
                 continue
 
-            # رد کردن مقالات خیلی کوتاه
-            if len(title) < 15:
+            if len(title) < 10:
                 continue
 
             articles.append({
@@ -94,39 +67,30 @@ def _fetch_feed(source_name, url, max_items=3):
                 "summary": summary[:2000],
                 "link": link,
                 "published": published,
-                "category": "specialized" if source_name in SPECIALIZED_FEEDS else "general",
+                "category": "general",
             })
 
-        log.info(f"✅ {source_name}: {len(articles)} مقاله")
+        log.info("✅ " + source_name + ": " + str(len(articles)) + " مقاله")
     except Exception as e:
-        log.error(f"❌ {source_name}: {str(e)[:80]}")
+        log.error("❌ " + source_name + ": " + str(e)[:80])
 
     return articles
 
 
 def fetch_all_articles():
-    """دریافت مقالات از همه منابع"""
-    log.info("📚 شروع دریافت مقالات از منابع پزشکی...")
+    log.info("📚 شروع دریافت مقالات پزشکی فارسی...")
     all_articles = []
 
-    log.info("\n🔬 منابع تخصصی:")
-    for name, url in SPECIALIZED_FEEDS.items():
+    for name, url in PERSIAN_FEEDS.items():
         articles = _fetch_feed(name, url, max_items=3)
         all_articles.extend(articles)
         time.sleep(0.3)
 
-    log.info("\n🩺 منابع عمومی:")
-    for name, url in GENERAL_FEEDS.items():
-        articles = _fetch_feed(name, url, max_items=3)
-        all_articles.extend(articles)
-        time.sleep(0.3)
-
-    log.info(f"\n🎯 مجموع: {len(all_articles)} مقاله")
+    log.info("\n🎯 مجموع: " + str(len(all_articles)) + " مقاله")
     return all_articles
 
 
 def fetch_article_full_text(url, max_chars=5000):
-    """دریافت متن کامل مقاله از لینک (اختیاری)"""
     try:
         headers = {
             "User-Agent": "Mozilla/5.0 (compatible; MedicalBot/1.0)"
@@ -141,8 +105,10 @@ def fetch_article_full_text(url, max_chars=5000):
 
         article_body = (
             soup.find("article") or
+            soup.find("div", class_="item-text") or
             soup.find("div", class_="article-body") or
             soup.find("div", class_="content") or
+            soup.find("div", class_="news-text") or
             soup.find("main") or
             soup.body
         )
@@ -156,13 +122,13 @@ def fetch_article_full_text(url, max_chars=5000):
 
         return text[:max_chars]
     except Exception as e:
-        log.warning(f"⚠️ خطا در دریافت متن کامل: {str(e)[:80]}")
+        log.warning("⚠️ خطا در متن کامل: " + str(e)[:80])
         return ""
 
 
 if __name__ == "__main__":
     articles = fetch_all_articles()
-    print(f"\n📊 {len(articles)} مقاله دریافت شد\n")
+    print("\n📊 " + str(len(articles)) + " مقاله")
     for a in articles[:5]:
-        print(f"[{a['source']}] {a['title'][:80]}")
-        print(f"   🔗 {a['link']}\n")
+        print("[" + a['source'] + "] " + a['title'][:80])
+        print("   🔗 " + a['link'] + "\n")
