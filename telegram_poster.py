@@ -1,11 +1,17 @@
 """
 ارسال پست‌های پزشکی به کانال تلگرام
+- ترجمه به فارسی
+- ساخت PDF
+- ارسال متن + PDF
 """
 import os
 import logging
 import asyncio
-from telegram import Bot
+from telegram import Bot, InputFile
 from telegram.constants import ParseMode
+
+from translator import translate_title, translate_summary, translate_to_fa
+from pdf_generator import generate_pdf
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
 log = logging.getLogger(__name__)
@@ -45,6 +51,10 @@ def _hashtags(source):
         "PubMed Oncology": "#انکولوژی #سرطان #ژورنال_کلاب",
         "PubMed HIV": "#HIV #ایدز #عفونی",
         "PubMed Infectious": "#عفونی #میکروبیولوژی",
+        "PMC Open Access": "#مقاله_رایگان #OpenAccess",
+        "Europe PMC": "#مقاله_رایگان #EuropePMC",
+        "DOAJ": "#مقاله_رایگان #DOAJ",
+        "medRxiv": "#پیش_چاپ #medRxiv",
         "WHO": "#سلامت_عمومی #WHO",
         "Mayo Clinic": "#سلامت_عمومی #MayoClinic",
         "MedlinePlus": "#سلامت_عمومی",
@@ -53,16 +63,38 @@ def _hashtags(source):
     return mapping.get(source, "#پزشکی #سلامت")
 
 
-def build_post(article):
-    """ساخت متن پست بر اساس مقاله"""
-    source = article.get("source", "")
-    category = article.get("category", "general")
-    title = article.get("title", "").strip()
-    summary = article.get("summary", "").strip()
-    link = article.get("link", "").strip()
-    published = article.get("published", "").strip()
+def prepare_article(article):
+    """
+    آماده‌سازی مقاله:
+    - ترجمه عنوان و خلاصه
+    - ترجمه متن کامل (اگه داشتیم)
+    """
+    log.info(f"🌐 پردازش: {article.get('title', '')[:50]}...")
 
-    # ایموجی و برچسب بر اساس دسته
+    # ترجمه
+    article["title_fa"] = translate_title(article.get("title", ""))
+    article["summary_fa"] = translate_summary(article.get("summary", ""))
+
+    # ترجمه متن کامل (اگه داشتیم)
+    full_text = article.get("full_text", "").strip()
+    summary = article.get("summary", "").strip()
+    if full_text and len(full_text) > len(summary) + 100:
+        log.info("   🌐 ترجمه متن کامل...")
+        article["full_text_fa"] = translate_to_fa(full_text)
+    else:
+        article["full_text_fa"] = ""
+
+    return article
+
+
+def build_caption(article):
+    """ساخت متن کپشن (زیر PDF)"""
+    source = article.get("source", "")
+    title_fa = article.get("title_fa") or article.get("title", "")
+    summary_fa = article.get("summary_fa") or article.get("summary", "")
+    link = article.get("link", "").strip()
+    category = article.get("category", "specialized")
+
     if category == "specialized":
         icon = "🔬"
         label = "مقاله تخصصی"
@@ -70,66 +102,107 @@ def build_post(article):
         icon = "🩺"
         label = "سلامت عمومی"
 
-    # خلاصه (کوتاه)
-    summary_short = _truncate(_escape(summary), 700)
+    # کپشن (حداکثر ۱۰۲۴ کاراکتر برای عکس/فایل)
+    summary_short = _truncate(_escape(summary_fa), 500)
 
     parts = [
-        f"{icon} <b>{_escape(title)}</b>",
+        f"{icon} <b>{_escape(title_fa)}</b>",
         "",
+        f"📖 {summary_short}",
+        "",
+        f"📚 منبع: <b>{_escape(source)}</b>",
+        f"🔗 <a href=\"{link}\">لینک اصلی مقاله</a>",
+        "",
+        f"🏷 {_hashtags(source)}",
+        f"📢 {CHANNEL_HANDLE}",
+        "",
+        "⚠️ این مطلب صرفاً جنبه اطلاع‌رسانی علمی دارد و جایگزین نظر پزشک متخصص نیست.",
+        "",
+        "📄 <b>فایل PDF ترجمه‌شده در پیام بعدی ارسال می‌شود.</b>",
     ]
-
-    if summary_short:
-        parts.append(f"📖 {summary_short}")
-        parts.append("")
-
-    if published:
-        parts.append(f"🗓 {_escape(published)}")
-
-    parts.append(f"📚 منبع: <b>{_escape(source)}</b>")
-    parts.append(f"🔗 <a href=\"{link}\">متن کامل مقاله</a>")
-    parts.append("")
-    parts.append(f"🏷 {_hashtags(source)}")
-    parts.append(f"📢 {CHANNEL_HANDLE}")
-    parts.append("")
-    parts.append("⚠️ این مطلب صرفاً جنبه اطلاع‌رسانی علمی دارد و جایگزین نظر پزشک متخصص نیست.")
 
     return "\n".join(parts)
 
 
-async def send_post(text):
-    """ارسال پست به کانال"""
+async def send_article(article):
+    """
+    ارسال مقاله:
+    - پیام متنی اول
+    - سپس PDF
+    """
     bot = Bot(token=os.environ["TELEGRAM_BOT_TOKEN"])
+
     try:
-        await bot.send_message(
-            chat_id=CHANNEL_ID,
-            text=text[:4096],
-            parse_mode=ParseMode.HTML,
-            disable_web_page_preview=False,
-        )
-        log.info("✅ پست ارسال شد")
-        return True
+        # ۱. ساخت PDF
+        pdf_path = generate_pdf(article)
+
+        # ۲. ساخت کپشن
+        caption = build_caption(article)
+
+        # ۳. ارسال PDF با کپشن
+        if pdf_path and os.path.exists(pdf_path):
+            # PDF حجمش کمه، پس با کپشن بفرست
+            with open(pdf_path, "rb") as f:
+                await bot.send_document(
+                    chat_id=CHANNEL_ID,
+                    document=InputFile(f, filename=os.path.basename(pdf_path)),
+                    caption=caption[:1024],
+                    parse_mode=ParseMode.HTML,
+                )
+            log.info("✅ PDF + کپشن ارسال شد")
+
+            # اگه متن کامل ترجمه شده بود ولی توی PDF نیومده، ادامه رو بفرست
+            full_text_fa = article.get("full_text_fa", "")
+            if full_text_fa and len(full_text_fa) > 2000:
+                remaining = full_text_fa[2000:]
+                if len(remaining) > 100:
+                    for chunk_start in range(0, len(remaining), 4000):
+                        chunk = remaining[chunk_start:chunk_start + 4000]
+                        if chunk.strip():
+                            await bot.send_message(
+                                chat_id=CHANNEL_ID,
+                                text=chunk,
+                                parse_mode=ParseMode.HTML,
+                            )
+                            await asyncio.sleep(2)
+            return True
+        else:
+            # اگه PDF نشد، فقط متن بفرست
+            log.warning("⚠️ PDF ساخته نشد، فقط متن ارسال می‌شود")
+            await bot.send_message(
+                chat_id=CHANNEL_ID,
+                text=caption[:4096],
+                parse_mode=ParseMode.HTML,
+                disable_web_page_preview=False,
+            )
+            return True
+
     except Exception as e:
         log.error(f"❌ خطا در ارسال: {e}")
         return False
 
 
 async def post_article(article):
-    """ساخت و ارسال یک مقاله"""
-    log.info(f"📝 ساخت پست: {article.get('title', '')[:60]}...")
-    post_text = build_post(article)
-    log.info(f"\n{post_text}\n")
-    return await send_post(post_text)
+    """تابع اصلی: آماده‌سازی + ارسال"""
+    log.info(f"📝 پردازش مقاله: {article.get('title', '')[:60]}...")
+
+    # ۱. ترجمه
+    article = prepare_article(article)
+
+    # ۲. ارسال
+    return await send_article(article)
 
 
 if __name__ == "__main__":
     # تست محلی
     test_article = {
-        "source": "WHO",
-        "category": "general",
-        "title": "New guidelines for hypertension management",
-        "summary": "WHO released updated guidelines for the management of hypertension in adults, emphasizing lifestyle changes and early intervention.",
-        "link": "https://www.who.int/",
-        "published": "Mon, 12 Oct 2026 10:00:00 GMT",
+        "source": "NEJM",
+        "category": "specialized",
+        "title": "Vasopressors or Fluids in Early Septic Shock",
+        "summary": "The optimal approach to early resuscitation in septic shock is unknown.",
+        "full_text": "Sepsis is a life-threatening condition. Early resuscitation is critical.",
+        "link": "https://www.nejm.org/",
+        "published": "Mon, 12 Oct 2026",
     }
 
     async def _test():
