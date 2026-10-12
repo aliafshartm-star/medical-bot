@@ -1,0 +1,58 @@
+name: Medical Bot Auto Agent
+
+on:
+  workflow_dispatch:
+
+  schedule:
+    # هر ۶ ساعت یک بار (ساعت ۰، ۶، ۱۲، ۱۸ UTC)
+    - cron: '0 */6 * * *'
+
+permissions:
+  contents: write
+
+jobs:
+  run-medical-bot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run Medical Bot
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID }}
+        run: python main.py
+
+      - name: Save seen articles memory
+        if: always()
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add seen_articles.json
+          if git diff --staged --quiet; then
+            echo "📭 تغییری در حافظه نیست"
+          else
+            git commit -m "update seen articles [skip ci]"
+            git push
+            echo "✅ حافظه به‌روزرسانی شد"
+          fi
