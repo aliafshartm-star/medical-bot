@@ -1,9 +1,3 @@
-"""
-ارسال پست‌های پزشکی فارسی به کانال تلگرام
-- بدون ترجمه (محتوا از قبل فارسیه)
-- ساخت PDF فارسی
-- فقط یک پست (PDF + کپشن)
-"""
 import os
 import logging
 from telegram import Bot, InputFile
@@ -36,7 +30,6 @@ def _truncate(text, max_len):
 
 
 def _hashtags(source):
-    """هشتگ بر اساس منبع"""
     mapping = {
         "مهر سلامت": "#سلامت #اخبار_پزشکی #مهر",
         "ایسنا سلامت": "#سلامت #اخبار_پزشکی #ایسنا",
@@ -51,7 +44,6 @@ def _hashtags(source):
 
 
 def build_caption(article):
-    """ساخت کپشن کوتاه (زیر PDF)"""
     source = article.get("source", "")
     title = article.get("title", "")
     summary = article.get("summary", "")
@@ -60,38 +52,32 @@ def build_caption(article):
     summary_short = _truncate(_escape(summary), 600)
 
     parts = [
-        f"🩺 <b>{_escape(title)}</b>",
+        "🩺 <b>" + _escape(title) + "</b>",
         "",
     ]
 
     if summary_short:
-        parts.append(f"📖 {summary_short}")
+        parts.append("📖 " + summary_short)
         parts.append("")
 
-    parts.extend([
-        f"📚 منبع: <b>{_escape(source)}</b>",
-        f"🔗 <a href=\"{link}\">لینک خبر</a>",
-        "",
-        f"🏷 {_hashtags(source)}",
-        f"📢 {CHANNEL_HANDLE}",
-        "",
-        "⚠️ صرفاً جهت اطلاع‌رسانی — جایگزین نظر پزشک ساخت متخصص نیست.",
-        "",
-        "📄 <b>متن کامل در PDF ضمیمه</b>",
-    ])
+    parts.append("📚 منبع: <b>" + _escape(source) + "</b>")
+    parts.append('🔗 <a href="' + link + '">لینک خبر</a>')
+    parts.append("")
+    parts.append("🏷 " + _hashtags(source))
+    parts.append("📢 " + CHANNEL_HANDLE)
+    parts.append("")
+    parts.append("⚠️ صرفاً جهت اطلاع‌رسانی — جایگزین نظر پزشک متخصص نیست.")
+    parts.append("")
+    parts.append("📄 <b>متن کامل در PDF ضمیمه</b>")
 
-    return "\n PDF".join(parts)
+    return "\n".join(parts)
 
 
 async def send_article(article):
-    """ارسال یک پست: PDF + کپشن"""
-   
- bot = Bot(token=os.environ["TELEGRAM_BOT_TOKEN"])
+    bot = Bot(token=os.environ["TELEGRAM_BOT_TOKEN"])
 
     try:
-        #        pdf_path = generate_pdf(article)
-
-        # ساخت کپشن
+        pdf_path = generate_pdf(article)
         caption = build_caption(article)
 
         if pdf_path and os.path.exists(pdf_path):
@@ -115,11 +101,10 @@ async def send_article(article):
             return True
 
     except Exception as e:
-        log.error(f"❌ خطا در ارسال: {e}")
+        log.error("❌ خطا در ارسال: " + str(e))
         return False
 
 
 async def post_article(article):
-    """تابع اصلی: ارسال"""
-    log.info(f"📝 ارسال مقاله: {article.get('title', '')[:60]}...")
+    log.info("📝 ارسال مقاله: " + article.get("title", "")[:60] + "...")
     return await send_article(article)
