@@ -43,16 +43,16 @@ jobs:
           TELEGRAM_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID }}
         run: python main.py
 
-      - name: Save seen articles memory
+      - name: Save memory files
         if: always()
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git add seen_articles.json
+          git add seen_articles.json translation_cache.json
           if git diff --staged --quiet; then
-            echo "📭 تغییری در حافظه نیست"
+            echo "📭 تغییری نیست"
           else
-            git commit -m "update seen articles [skip ci]"
+            git commit -m "update memory [skip ci]"
             git push
             echo "✅ حافظه به‌روزرسانی شد"
           fi
