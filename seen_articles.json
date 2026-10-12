@@ -1,15 +1,3 @@
 {
-  "seen_urls": [
-    "https://www.biorxiv.org/content/10.64898/2026.10.05.756694v1?rss=1",
-    "https://www.nature.com/articles/s41591-026-04691-1",
-    "https://www.nature.com/articles/s41591-026-04736-5",
-    "http://www.bmj.com/content/395/bmj-2026-101053.short?rss=1",
-    "https://www.nature.com/articles/s41591-026-04689-9",
-    "https://www.nature.com/articles/d41586-026-03225-6",
-    "https://www.medrxiv.org/content/10.64898/2026.10.07.26365009v1?rss=1",
-    "https://www.medrxiv.org/content/10.64898/2026.10.08.26365024v1?rss=1",
-    "https://www.nejm.org/doi/full/10.1056/NEJMoa2516225?af=R&rss=currentIssue",
-    "https://www.nature.com/articles/d41586-026-03240-7",
-    "https://www.biorxiv.org/content/10.64898/2026.10.05.756778v1?rss=1"
-  ]
+  "seen_urls": []
 }
